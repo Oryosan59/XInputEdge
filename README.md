@@ -1,186 +1,295 @@
 [![CI Pipeline](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml)
-# XInputEdge
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/Sender-Windows%20%7C%20C%23%20%2F%20.NET%208-informational)
+![Platform](https://img.shields.io/badge/Receiver-Linux%20%7C%20C99%20%2F%20CMake-success)
+![Protocol](https://img.shields.io/badge/Protocol-UDP%20%40%201000%20Hz-orange)
 
-XIE
-読み: **クスィー**
+<br>
 
-Windows PC に接続された XInput 対応ゲームパッド（Xbox コントローラー等）の入力を、ネットワーク (UDP) 経由で Linux / Raspberry Pi / MCU などへ超低遅延（1000 Hz）でストリーミングするための通信ライブラリです。
+<div align="center">
 
-「PC 上の豊かで強力な C# 環境でデバイス入力を受け取り、軽量な C コンパイラしか存在しないエッジデバイス（ラズパイやロボットなど）へネットワーク越しに直接制御命令として流し込む」という用途に特化して設計されています。
+```
+██╗  ██╗██╗███╗   ██╗██████╗ ██╗   ██╗████████╗███████╗██████╗  ██████╗ ███████╗
+╚██╗██╔╝██║████╗  ██║██╔══██╗██║   ██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝ ██╔════╝
+ ╚███╔╝ ██║██╔██╗ ██║██████╔╝██║   ██║   ██║   █████╗  ██║  ██║██║  ███╗█████╗  
+ ██╔██╗ ██║██║╚██╗██║██╔═══╝ ██║   ██║   ██║   ██╔══╝  ██║  ██║██║   ██║██╔══╝  
+██╔╝ ██╗██║██║ ╚████║██║     ╚██████╔╝   ██║   ███████╗██████╔╝╚██████╔╝███████╗
+╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝      ╚═════╝    ╚═╝   ╚══════╝╚═════╝  ╚═════╝ ╚══════╝
+```
+
+**XIE** ─ 読み: **クスィー**
+
+*XInput → UDP → Edge.  1 ms. Zero allocation. No compromise.*
+
+</div>
+
+---
+
+## 概要
+
+Windows PC に接続された XInput 対応ゲームパッドの入力を、**UDP 経由で 1000 Hz** にてエッジデバイスへストリーミングする通信ライブラリ。
+
+> **設計思想:** PC 上の豊かな C# 環境でデバイス入力を受け取り、C コンパイラしかないエッジデバイス（Raspberry Pi・ロボット等）へ、ネットワーク越しに直接・超低遅延で制御命令として流し込む。
+
+```
+┌─────────────────────────────────┐         ┌──────────────────────────────────┐
+│         Windows PC              │  UDP    │     Raspberry Pi / Linux MCU     │
+│  ┌───────────────────────────┐  │ ──────► │  ┌────────────────────────────┐  │
+│  │  XInput API               │  │ 22 B   │  │  xie_server_recv()         │  │
+│  │    │                      │  │ 1000Hz │  │    │                        │  │
+│  │    ▼                      │  │        │  │    ▼                        │  │
+│  │  XieClient (C#)           │  │        │  │  De-jitter Ring Buffer      │  │
+│  │  Stopwatch + SpinWait     │  │        │  │    │                        │  │
+│  │  Zero-alloc send loop     │  │        │  │    ▼                        │  │
+│  └───────────────────────────┘  │        │  │  xie_server_state()         │  │
+│   1 ms tick / GC-spike free     │        │  │  → Motor / PWM control      │  │
+└─────────────────────────────────┘        └──────────────────────────────────┘
+```
+
+---
 
 ## アーキテクチャ
 
-本プロジェクトは、役割の異なる 2 つの独立したコードベースで構成されています。
+本プロジェクトは **2 つの独立したコードベース**で構成されています。
 
-1. **[送信側 (xinputedge-sender)](./xinputedge-sender/README.md)**
-   - **環境:** C# / .NET 8+ (Windows 専用)
-   - **役割:** XInput API を叩いてゲームパッドの入力を取得し、XIE Packet にシリアライズして UDP で送信します。
-   - **特徴:** `Stopwatch` を利用した高精度タイマースレッドにより 1 ms 周期 (1000 Hz) での送信ループを実現し、GC によるスパイクを防ぐ完全なゼロアロケーション設計です。
+### `xinputedge-sender` — C# / .NET 8+ (Windows)
 
-2. **[受信側 (xinputedge-receiver)](./xinputedge-receiver/README.md)**
-   - **環境:** C99 / CMake (Linux / Raspberry Pi 等を想定)
-   - **役割:** ネットワークスレッド経由で XIE Packet を受信・検証し、ユーザー（メインスレッド等）に最新の入力状態を提供します。
-   - **特徴:** 通信ジッターを吸収するリングバッファ（De-jitter バッファ）を搭載しており、ネットワークの揺らぎに関わらず滑らかな制御ループ（例: PWM モータ制御ループなど）を維持できます。動的メモリ確保（malloc 等）にも依存しません。
-
-## 通信仕様 (XIE Protocol)
-
-UDP ベースの独自設計による 22 バイト固定長の軽量 XIE Packet を使用しています。
-
-- **マジックナンバー:** `0x5849`（"XI"）
-- **転送レート:** 最大 1000 Hz
-- **エンディアン:** リトルエンディアン固定
-- **異常検知・フェイルセーフ:**
-  - サンプルの連番 (Sample ID) によるパケットロス検知
-  - C# 側の送信ストップウォッチのタイムスタンプ同期
-  - 無通信時（50 ms 以上）の自動フェイルセーフ機能（アナログスティックや出力をニュートラルへリセット）
-
-詳細なバイナリフォーマットについては [xie_protocol.h](./xinputedge-receiver/protocol/xie_protocol.h) を参照してください。
-
-## CI / 品質管理
-
-全ての Push / Pull Request に対して以下が自動実行されます。
-
-| ジョブ | 内容 |
+| 特徴 | 詳細 |
 |---|---|
-| **format** | `clang-format`（C）+ `dotnet format`（C#）|
-| **static-analysis** | `cppcheck` 静的解析 |
-| **build-release** | Release ビルド + `ctest` ユニットテスト |
-| **build-debug** | Debug ビルド + `ctest` ユニットテスト |
+| **入力取得** | XInput API によるゲームパッド読み取り |
+| **送信周期** | `Stopwatch` + `SpinWait` スピンクロック → **1 ms (1000 Hz)** |
+| **メモリ** | 完全ゼロアロケーション設計。GC スパイク排除 |
+| **出力** | 22 バイト固定長 XIE Packet を UDP で送出 |
 
-## 使い方（Quick Start）
+→ 詳細: [xinputedge-sender/README.md](./xinputedge-sender/README.md)
 
-すぐに試してみるための手順です。より詳細な使い方は各ディレクトリの README を参照してください。
+### `xinputedge-receiver` — C99 / CMake (Linux / Raspberry Pi)
 
-### 1. 受信側の準備 (Raspberry Pi / Linux)
+| 特徴 | 詳細 |
+|---|---|
+| **受信** | 専用ネットワークスレッドで XIE Packet を受信・検証 |
+| **ジッター吸収** | De-jitter リングバッファ (±2 ms のネットワーク揺らぎを平滑化) |
+| **メモリ** | `malloc` 非使用。静的確保のみ |
+| **フェイルセーフ** | 50 ms 無通信で Safe State へ自動移行 |
+
+→ 詳細: [xinputedge-receiver/README.md](./xinputedge-receiver/README.md)
+
+---
+
+## XIE Protocol
+
+UDP ベースの独自設計による **22 バイト固定長**パケット。
+
+```
+Offset  Size  Field          Description
+──────  ────  ─────────────  ────────────────────────────────────────────
+  0      2    magic          0x5849 ("XI") — フレーム同期用マジックナンバー
+  2      1    version        プロトコルバージョン (現在: 1)
+  3      1    type_flags     パケット種別 & フラグ
+  4      2    sample_id      連番 (0–65535 ローテーション) — ロス検知用
+  8      4    timestamp_us   C# 側マイクロ秒タイムスタンプ
+ 12      2    lx             左スティック X  (-32768 ~ 32767)
+ 14      2    ly             左スティック Y  (-32768 ~ 32767)
+ 16      2    rx             右スティック X  (-32768 ~ 32767)
+ 18      2    ry             右スティック Y  (-32768 ~ 32767)
+ 20      1    lt             左トリガー      (0 ~ 255)
+ 21      1    rt             右トリガー      (0 ~ 255)
+ 22      2    buttons        ボタン状態      (16-bit フラグ)
+```
+
+- **エンディアン:** リトルエンディアン固定
+- **MTU:** 22 B < 1500 B → フラグメンテーション発生なし
+- **フェイルセーフ:** 50 ms 無通信で `connection_lost` ステートへ自動移行
+
+詳細フォーマット → [`xie_protocol.h`](./xinputedge-receiver/protocol/xie_protocol.h)
+
+---
+
+## パフォーマンス
+
+| 計測項目 | 値 | 備考 |
+|---|---|---|
+| 送信スレッド周期 | **~1.0 ms** | SpinWait スピンクロック |
+| ペイロードサイズ | **22 Bytes** | MTU 内に完全収容 |
+| UDP 受信周期 | **~1.0 – 1.5 ms** | OS ネットワークスタックによる揺らぎ込み |
+| De-jitter 吸収遅延 | **5 ms** | `XIE_DEJITTER_DELAY=5` で ±2 ms を平滑化 |
+| ローカルネットワーク パケットロス率 | **0%** | 安定した LAN 環境での実測値 |
+
+---
+
+## 実証ログ
+
+ラズパイ上で 250 Hz サンプリングした実際の受信ログ:
+
+```
+[XIE] M:5849 V:1 TF:01 ID:42145 TS:631968402 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
+[XIE] M:5849 V:1 TF:01 ID:42149 TS:631972399 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
+[XIE] M:5849 V:1 TF:41 ID:42154 TS:631977399 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
+```
+
+| フィールド | 説明 |
+|---|---|
+| `M` | マジックナンバー (`5849` = "XI") |
+| `V` | プロトコルバージョン |
+| `TF` | タイプ & フラグ |
+| `ID` | パケット連番 |
+| `TS` | C# 側マイクロ秒タイムスタンプ |
+| `LX/LY/RX/RY` | アナログスティック値 (-32768 ~ 32767) |
+| `LT/RT` | トリガー値 (0 ~ 255) |
+| `BTN` | ボタン状態 (16-bit hex) |
+| `LOST` | パケットロスカウンタ |
+
+---
+
+## Quick Start
+
+### Step 1 — 受信側 (Raspberry Pi / Linux)
 
 ```bash
-cd xinputedge-receiver
+git clone https://github.com/Oryosan59/XInputEdge.git
+cd XInputEdge/xinputedge-receiver
+
 mkdir build && cd build
 cmake ..
 cmake --build .
 
-# サンプルアプリケーションの起動
+# サンプル起動 → 192.168.4.100:5000 で UDP 受信待機
 ./examples/basic_receiver/basic_receiver
 ```
-> サンプルアプリケーションが起動し、`192.168.4.100:5000` で UDP の受信待機を始めます（IP はコード内で変更可能）。
 
-### 2. 送信側の準備 (Windows PC)
+### Step 2 — 送信側 (Windows PC)
 
-コントローラーを接続した Windows PC で、`xinputedge-sender/examples/BasicSender` を実行します。
-> 実行前に `Program.cs` 内の送信先 IP アドレス（`client.Start("192.168.4.100", 5000);`）を、受信側の IP アドレスに合わせて変更してください。
+`Program.cs` 内の送信先 IP を受信側に合わせて変更してから実行:
 
 ```powershell
 cd xinputedge-sender/examples/BasicSender
 dotnet run
 ```
 
-### 3. 通信の確認（実証データ）
+---
 
-正常に動作すると、**1000 回/秒（1 ms 周期）** で XIE Packet が送出されます。受信側のターミナルでは以下のようなリアルタイムなストリーミングデータが観測できます。
+## 組み込み手順
 
-```text
-[XIE] M:5849 V:1 TF:01 ID:42145 TS:631968402 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
-[XIE] M:5849 V:1 TF:01 ID:42149 TS:631972399 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
-[XIE] M:5849 V:1 TF:41 ID:42154 TS:631977399 | LX:   128 LY:   128 RX:   128 RY: -1671 LT:  0 RT:  0 BTN:0000 LOST:0
+### 【送信側】C# プロジェクト
+
+**1. ファイルをコピー**
+
 ```
-*(※ラズパイ上で毎秒 250 回の頻度でサンプリング出力した実際の検証ログです。)*
+your-project/
+├── XieClient.cs            ← xinputedge-sender/XieClient.cs
+└── protocol/
+    └── XieProtocol.cs      ← xinputedge-sender/protocol/XieProtocol.cs
+```
 
-**【データの見方】**
-- **メタデータ:** `M` (マジックナンバー `5849`="XI"), `V` (バージョン), `TF` (タイプ＆フラグ), `ID` (パケットの連番), `TS` (C# 側マイクロ秒タイムスタンプ)
-- **スティック (`LX`, `LY`, `RX`, `RY`):** -32768 ～ 32767 の高精度なアナログ値
-- **トリガー (`LT`, `RT`):** 0 ～ 255 のアナログ値
-- **ボタン (`BTN`):** 押されているボタンを示す 16bit の 16 進数フラグ
-- **パケットロス (`LOST`):** ローカルネットワーク上では `0` を安定して維持します。
+**2. 実装**
 
-## 通信の安定性と検証データ
+```csharp
+using XInputEdge;
 
-### 処理レイテンシと通信ジッター
-| 項目 | 計測・理論値 | 備考 |
-|------|-----------|------|
-| 送信スレッド周期 | ~1.0 ms | `Stopwatch` + `SpinWait` のスピンクロックによる高精度タイマー |
-| ペイロードサイズ | 22 Bytes | MTU（通常 1500）に完全に収まるためフラグメンテーションが発生しない |
-| UDP 受信周期 | ~1.0 ms ～ 1.5 ms | OS のネットワークスタックによる揺らぎ (ジッター) を含む |
-| De-jitter 吸収遅延 | 5 サンプル (5 ms) | `XIE_DEJITTER_DELAY=5` にて ±2 ms のネットワークブレを平滑化 |
+// 接続中の最初のコントローラーを自動検出
+int playerIndex = XieClient.FindFirstConnected();
 
-### 障害回復テスト（フェイルセーフ動作）
-1. **パケットロスと検知**: `sample_id` (0～65535 のローテーション) の連番チェックにより、パケットロス発生時に `xie_server_lost()` のカウンターが正確に増加します。安定したローカルネットワークでは**ロス率 0%** を維持します。
-2. **通信タイムアウト時の挙動**: 無通信状態が **50 ms** 経過すると即座に `connection_lost` ステートに移行し、入力が全て `0` の安全状態 (Safe State) へ移行。制御対象（ロボット等）の暴走を防止します。
-3. **ゼロアロケーション**: ネットワークスレッドと制御ループ (1 kHz) を完全に分離。動的メモリ確保を行わないためメモリリークや GC スパイクを排除しています。
+if (playerIndex >= 0)
+{
+    using var client = new XieClient(playerIndex);
 
-## 具体的な組み込み手順
+    // 非ブロッキング。呼び出し後すぐに 1000 Hz 送信が始まる
+    client.Start("192.168.4.100", 5000);
 
-### 【送信側】C# (.NET) プロジェクトへの組み込み
+    Console.ReadLine(); // アプリ稼働中はここで待機
 
-1. **ファイルのコピー**
-   `xinputedge-sender` フォルダから以下の 2 ファイルをあなたの C# プロジェクトにコピーします。
-   - `protocol/XieProtocol.cs`（プロトコル定義）
-   - `XieClient.cs`（クライアント本体）
+    // using により自動的に Stop() & Dispose() が呼ばれる
+}
+```
 
-2. **初期化と送信の開始**
-
-   ```csharp
-   using XInputEdge;
-
-   int playerIndex = XieClient.FindFirstConnected();
-   if (playerIndex >= 0) {
-       using var client = new XieClient(playerIndex);
-       client.Start("192.168.4.100", 5000);
-       // client.Start() はブロックしません。非同期でパケットが送信され続けます。
-   }
-   ```
-
-3. **終了処理（重要）**
-   アプリ終了時に必ず `client.Stop();` または `Dispose();` を呼んでください。
+> ⚠️ アプリ終了時に必ず `client.Stop()` または `Dispose()` を呼ぶこと。
 
 ---
 
-### 【受信側】C 言語プロジェクトへの組み込み
+### 【受信側】C プロジェクト
 
-1. **ファイルのコピー**
-   `xinputedge-receiver` フォルダから以下をあなたの C プロジェクトにコピーします。
-   - `include/xinputedge/`（統一ヘッダ群）
-   - `protocol/xie_protocol.h`（プロトコル定義）
-   - `src/*.c` および `src/*.h`（実装ファイル一式）
+**1. ファイルをコピー**
 
-2. **受信スレッドの作成と制御ループの実装**
+```
+your-project/
+├── include/xinputedge/     ← xinputedge-receiver/include/xinputedge/
+├── protocol/
+│   └── xie_protocol.h      ← xinputedge-receiver/protocol/xie_protocol.h
+└── src/                    ← xinputedge-receiver/src/*.c, *.h
+```
 
-   ```c
-   /* 統一エントリポイント — これ 1 行で全 API にアクセスできます */
-   #include <xinputedge/xinputedge.h>
-   #include <pthread.h>
+**2. 実装**
 
-   void *network_thread(void *arg) {
-       XieServer *server = (XieServer *)arg;
-       while (1) { xie_server_recv(server); }
-       return NULL;
-   }
+```c
+#include <xinputedge/xinputedge.h>  /* 統一エントリポイント — これ 1 行で全 API */
+#include <pthread.h>
 
-   int main(void) {
-       XieServer *server = xie_server_create();
-       xie_server_init(server, "0.0.0.0", 5000);
+/* ネットワークスレッド — 制御ループと完全分離 */
+void *network_thread(void *arg) {
+    XieServer *server = (XieServer *)arg;
+    while (1) { xie_server_recv(server); }
+    return NULL;
+}
 
-       pthread_t th;
-       pthread_create(&th, NULL, network_thread, server);
+int main(void) {
+    XieServer *server = xie_server_create();
+    xie_server_init(server, "0.0.0.0", 5000);
 
-       while (1) {
-           if (xie_server_is_timeout(server)) {
-               /* 【ここでモーターを緊急停止させる処理を書く】 */
-           } else {
-               const XieState *state = xie_server_state(server);
-               /* state->lx, state->ly : 左スティック (-32768 ~ 32767) */
-               /* state->rx, state->ry : 右スティック (-32768 ~ 32767) */
-               /* state->lt, state->rt : 左右トリガー  (0 ~ 255)        */
-               /* state->buttons       : ボタン状態    (XieButtons 参照) */
-           }
-           xie_sleep_us(1000); /* 1 ms 待機 */
-       }
+    pthread_t th;
+    pthread_create(&th, NULL, network_thread, server);
 
-       xie_server_destroy(server);
-       return 0;
-   }
-   ```
+    /* 1 kHz 制御ループ */
+    while (1) {
+        if (xie_server_is_timeout(server)) {
+            /* ── フェイルセーフ: モーター緊急停止 ── */
+        } else {
+            const XieState *s = xie_server_state(server);
+            /* s->lx, s->ly  : 左スティック  (-32768 ~ 32767) */
+            /* s->rx, s->ry  : 右スティック  (-32768 ~ 32767) */
+            /* s->lt, s->rt  : トリガー      (0 ~ 255)        */
+            /* s->buttons    : ボタン状態    (XieButtons 参照) */
+        }
+        xie_sleep_us(1000); /* 1 ms */
+    }
 
-> CMake の `add_subdirectory` で組み込む場合、`target_link_libraries(your_target PRIVATE xinputedge)` だけで include パスは自動伝播します。
+    xie_server_destroy(server);
+    return 0;
+}
+```
+
+**3. CMake**
+
+```cmake
+add_subdirectory(xinputedge-receiver)
+target_link_libraries(your_target PRIVATE xinputedge)
+# include パスは自動伝播されます
+```
+
+---
+
+## CI / 品質管理
+
+すべての Push / Pull Request に対して自動実行:
+
+| ジョブ | 内容 |
+|---|---|
+| `format` | `clang-format` (C) + `dotnet format` (C#) |
+| `static-analysis` | `cppcheck` による静的解析 |
+| `build-release` | Release ビルド + `ctest` ユニットテスト |
+| `build-debug` | Debug ビルド + `ctest` ユニットテスト |
+
+---
+
+## フェイルセーフ動作
+
+| 条件 | 動作 |
+|---|---|
+| パケットロス検出 | `sample_id` 連番ギャップを検知 → `xie_server_lost()` カウンタ増加 |
+| **50 ms 無通信** | 即座に `connection_lost` ステートへ移行。全入力を `0`（Safe State）にリセット |
+| GC スパイク | ゼロアロケーション設計により発生しない |
+
+---
 
 ## ライセンス
-MIT License
+
+MIT License — © Oryosan59
