@@ -66,6 +66,7 @@ install(DIRECTORY protocol/
 option(BUILD_EXAMPLES "Build examples" ON)
 if(BUILD_EXAMPLES)
     add_subdirectory(examples/basic_receiver)
+    add_subdirectory(examples/cli_robot_sim)
 endif()
 
 # ---------------------------------------------------------------
