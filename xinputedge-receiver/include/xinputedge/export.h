@@ -10,23 +10,23 @@
  * ビルド時に -DXINPUTEDGE_EXPORT を定義すると dllexport モードになる。
  */
 #ifdef _WIN32
-#  ifdef XINPUTEDGE_EXPORT
-#    define XINPUTEDGE_API __declspec(dllexport)
-#  else
-#    define XINPUTEDGE_API __declspec(dllimport)
-#  endif
+#ifdef XINPUTEDGE_EXPORT
+#define XINPUTEDGE_API __declspec(dllexport)
 #else
-#  if defined(__GNUC__) && __GNUC__ >= 4
-#    define XINPUTEDGE_API __attribute__((visibility("default")))
-#  else
-#    define XINPUTEDGE_API
-#  endif
+#define XINPUTEDGE_API __declspec(dllimport)
+#endif
+#else
+#if defined(__GNUC__) && __GNUC__ >= 4
+#define XINPUTEDGE_API __attribute__((visibility("default")))
+#else
+#define XINPUTEDGE_API
+#endif
 #endif
 
 /* static library としてリンクする場合はこちらを使う */
 #ifdef XINPUTEDGE_STATIC
-#  undef XINPUTEDGE_API
-#  define XINPUTEDGE_API
+#undef XINPUTEDGE_API
+#define XINPUTEDGE_API
 #endif
 
 #endif /* XINPUTEDGE_EXPORT_H */

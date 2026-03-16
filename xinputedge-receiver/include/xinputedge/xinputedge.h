@@ -9,8 +9,8 @@
 #ifndef XINPUTEDGE_H
 #define XINPUTEDGE_H
 
-#include "export.h"  /* XINPUTEDGE_API マクロ */
-#include "server.h"  /* XieServer / XieState / XieButtons / xie_server_* */
+#include "export.h" /* XINPUTEDGE_API マクロ */
+#include "server.h" /* XieServer / XieState / XieButtons / xie_server_* */
 
 /*
  * XIE Protocol 定数・型を公開 API の一部として再エクスポート。
