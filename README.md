@@ -1,6 +1,7 @@
-[![CI Pipeline](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml)
+[![CI Pipeline](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oryosan59/XInputEdge/actions/workflows/ci.yml)
 # XInputEdge
 
+XIE
 読み: **クスィー**
 
 Windows PC に接続された XInput 対応ゲームパッド（Xbox コントローラー等）の入力を、ネットワーク (UDP) 経由で Linux / Raspberry Pi / MCU などへ超低遅延（1000 Hz）でストリーミングするための通信ライブラリです。
