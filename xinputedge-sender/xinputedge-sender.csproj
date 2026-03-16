@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>XInputEdge</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="examples\**" />
+    <EmbeddedResource Remove="examples\**" />
+    <None Remove="examples\**" />
+    <!-- 旧ファイルをビルドから除外 -->
+    <Compile Remove="GamepadClient.cs" />
+    <Compile Remove="protocol\GamepadProtocol.cs" />
+  </ItemGroup>
+</Project>

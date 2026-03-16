@@ -1,0 +1,37 @@
+# C/C++ ビルド生成物
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dll
+*.exe
+*.out
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# IDE / エディタ設定
+.vscode/
+.vs/
+.idea/
+*.swp
+*~
+
+# macOS
+.DS_Store

@@ -1,0 +1,20 @@
+---
+Language: C
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+SortIncludes: CaseInsensitive
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+SortIncludes: CaseInsensitive
