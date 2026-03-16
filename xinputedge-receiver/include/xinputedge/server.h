@@ -2,6 +2,7 @@
 #define XINPUTEDGE_SERVER_H
 
 #include <stdint.h>
+
 #include "export.h"
 
 #ifdef __cplusplus

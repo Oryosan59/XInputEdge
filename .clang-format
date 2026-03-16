@@ -5,4 +5,4 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 BreakBeforeBraces: Attach
 PointerAlignment: Right
-SortIncludes: CaseSensitive
+SortIncludes: false

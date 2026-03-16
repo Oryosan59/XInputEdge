@@ -2,6 +2,7 @@
 #define XIE_SERVER_H
 
 #include <stdint.h>
+
 #include "xinputedge/export.h"
 
 #ifdef __cplusplus
