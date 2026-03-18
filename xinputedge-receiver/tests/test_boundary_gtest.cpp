@@ -2,8 +2,8 @@
 #include <vector>
 
 extern "C" {
-#include "ring_buffer.h"
-#include "packet.h"
+#include "../src/ring_buffer.h"
+#include "../src/packet.h"
 }
 
 // ------------------------------------------------------------------
