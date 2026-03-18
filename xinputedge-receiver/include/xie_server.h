@@ -54,6 +54,8 @@ XINPUTEDGE_API void xie_server_destroy(XieServer *s);
 
 XINPUTEDGE_API int xie_server_init(XieServer *s, const char *bind_ip, int port);
 
+XINPUTEDGE_API int xie_server_get_port(const XieServer *s);
+
 XINPUTEDGE_API int xie_server_recv(XieServer *s);
 
 XINPUTEDGE_API const XieState *xie_server_state(const XieServer *s);

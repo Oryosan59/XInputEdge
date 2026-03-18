@@ -63,6 +63,18 @@ int xie_udp_recv(UdpReceiver *udp, void *buffer, size_t buffer_size) {
   return (int)received;
 }
 
+int xie_udp_get_port(const UdpReceiver *udp) {
+  if (!udp || udp->socket_fd < 0)
+    return -1;
+
+  struct sockaddr_in addr;
+  socklen_t len = sizeof(addr);
+  if (getsockname(udp->socket_fd, (struct sockaddr *)&addr, &len) == 0) {
+    return ntohs(addr.sin_port);
+  }
+  return -1;
+}
+
 void xie_udp_close(UdpReceiver *udp) {
   if (!udp || udp->socket_fd < 0)
     return;
