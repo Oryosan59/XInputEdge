@@ -48,6 +48,11 @@ int xie_server_init(XieServer *s, const char *bind_ip, int port) {
   return ret == 0 ? XIE_OK : XIE_ERROR;
 }
 
+int xie_server_get_port(const XieServer *s) {
+  if (!s) return -1;
+  return xie_udp_get_port(&s->udp);
+}
+
 static void apply_safe_state(XieServer *s) {
   s->current_state.lx = 0;
   s->current_state.ly = 0;

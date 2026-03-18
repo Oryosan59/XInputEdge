@@ -13,7 +13,7 @@
 #include "../protocol/xie_protocol.h"
 #include "../src/packet.h"
 #include "../src/udp.h"
-#include "../../xinputedge-receiver/include/xie_server.h"
+#include "../include/xie_server.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -86,33 +86,33 @@ static int send_mock_packet(int dest_port, const XiePacket *pkt) {
 }
 
 /* ------------------------------------------------------------------ */
-/* ヘルパー: OS に空きポートを割り当てさせ、番号を返す                   */
+/* TestFixture Setup & Teardown                                         */
 /* ------------------------------------------------------------------ */
-static int allocate_free_port(void) {
-  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (sock < 0)
-    return -1;
+typedef struct {
+  XieServer *srv;
+  int port;
+} TestFixture;
 
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family      = AF_INET;
-  addr.sin_port        = 0; /* 0 = OS が選択 */
-  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-  if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    close(sock);
-    return -1;
+static TestFixture setup_server(void) {
+  TestFixture f = {0};
+  f.srv = xie_server_create();
+  if (f.srv) {
+    if (xie_server_init(f.srv, "127.0.0.1", 0) == XIE_OK) {
+      f.port = xie_server_get_port(f.srv);
+    } else {
+      xie_server_destroy(f.srv);
+      f.srv = NULL;
+    }
   }
+  return f;
+}
 
-  socklen_t len = sizeof(addr);
-  if (getsockname(sock, (struct sockaddr *)&addr, &len) < 0) {
-    close(sock);
-    return -1;
+static void teardown_server(TestFixture *f) {
+  if (f && f->srv) {
+    xie_server_destroy(f->srv);
+    f->srv = NULL;
+    f->port = 0;
   }
-
-  int port = ntohs(addr.sin_port);
-  close(sock); /* XieServer 側が同ポートを bind するために解放 */
-  return port;
 }
 
 /* ================================================================== */
@@ -127,52 +127,41 @@ static int allocate_free_port(void) {
 static void test_normal_receive(void) {
   TEST("io: 正常パケット受信 → XIE_OK & state 一致");
 
-  int port = allocate_free_port();
-  if (port < 0) {
-    printf("SKIP (port allocation failed)\n");
-    return;
-  }
-
-  XieServer *srv = xie_server_create();
-  if (!srv) {
-    printf("SKIP (server create failed)\n");
-    return;
-  }
-
-  int init = xie_server_init(srv, "127.0.0.1", port);
-  if (init != XIE_OK) {
-    printf("SKIP (server init failed)\n");
-    xie_server_destroy(srv);
+  TestFixture f = setup_server();
+  if (!f.srv || f.port < 0) {
+    printf("SKIP (server setup failed)\n");
     return;
   }
 
   /* sample_id = 1 のパケットを送信 */
   XiePacket pkt = make_valid_packet(1);
-  int sent = send_mock_packet(port, &pkt);
+  int sent = send_mock_packet(f.port, &pkt);
 
   int recv_ret = XIE_TIMEOUT;
-  /* CIなどではUDPパケットがループバック経由でソケットバッファに入るまで数ms遅れることがあるため
-     タイムアウト(5ms)が返っても数回リトライする */
+  /* 初回のパケット到達を待つ */
   for (int i = 0; i < 10; i++) {
-    recv_ret = xie_server_recv(srv);
+    recv_ret = xie_server_recv(f.srv);
     if (recv_ret == XIE_OK || recv_ret == XIE_DROP) {
-      break; /* 受信完了（または明確な破棄） */
+      break; 
     }
   }
 
+  /* de-jitter buffer を考慮し、sample_id=1 のパケットが読み取れるように
+     追加でパケットを送信する（XIE_DEJITTER_DELAY 相当分） */
   if (recv_ret == XIE_OK) {
-    /* 2 回目を送って ring_buffer 内の state を確定させる */
-    XiePacket pkt2 = make_valid_packet(2);
-    send_mock_packet(port, &pkt2);
-    for (int i = 0; i < 10; i++) {
-      int r = xie_server_recv(srv);
-      if (r == XIE_OK || r == XIE_DROP) {
-        break;
+    // ring_buffer.h で XIE_DEJITTER_DELAY は 5 と定義されているため
+    // sample_id = 1 を読むには最新が 6 以上（ここでは余裕を見て 2〜6 を送信）
+    for (uint16_t id = 2; id <= 6; id++) {
+      XiePacket p = make_valid_packet(id);
+      send_mock_packet(f.port, &p);
+      for (int i = 0; i < 10; i++) {
+        int r = xie_server_recv(f.srv);
+        if (r == XIE_OK || r == XIE_DROP) break;
       }
     }
   }
 
-  const XieState *st = xie_server_state(srv);
+  const XieState *st = xie_server_state(f.srv);
 
   /* 検証とデバッグ出力 */
   int ok = 1;
@@ -192,8 +181,7 @@ static void test_normal_receive(void) {
   }
 
   ASSERT(ok);
-
-  xie_server_destroy(srv);
+  teardown_server(&f);
 }
 
 /*
@@ -204,33 +192,19 @@ static void test_normal_receive(void) {
 static void test_timeout(void) {
   TEST("io: 無送信時 → XIE_TIMEOUT & is_timeout == 1");
 
-  int port = allocate_free_port();
-  if (port < 0) {
-    printf("SKIP (port allocation failed)\n");
-    return;
-  }
-
-  XieServer *srv = xie_server_create();
-  if (!srv) {
-    printf("SKIP (server create failed)\n");
-    return;
-  }
-
-  int init = xie_server_init(srv, "127.0.0.1", port);
-  if (init != XIE_OK) {
-    printf("SKIP (server init failed)\n");
-    xie_server_destroy(srv);
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
     return;
   }
 
   /* recv_timeout は 5ms → タイムアウトが返るはず */
-  int recv_ret  = xie_server_recv(srv);
+  int recv_ret  = xie_server_recv(f.srv);
   /* 接続済み状態を経ていないので最初から connection_lost=1 のはず */
-  int is_timed  = xie_server_is_timeout(srv);
+  int is_timed  = xie_server_is_timeout(f.srv);
 
   ASSERT(recv_ret == XIE_TIMEOUT && is_timed == 1);
-
-  xie_server_destroy(srv);
+  teardown_server(&f);
 }
 
 /*
@@ -240,34 +214,25 @@ static void test_timeout(void) {
 static void test_invalid_packet_dropped(void) {
   TEST("io: 不正パケット → XIE_DROP");
 
-  int port = allocate_free_port();
-  if (port < 0) {
-    printf("SKIP (port allocation failed)\n");
-    return;
-  }
-
-  XieServer *srv = xie_server_create();
-  if (!srv) {
-    printf("SKIP (server create failed)\n");
-    return;
-  }
-
-  int init = xie_server_init(srv, "127.0.0.1", port);
-  if (init != XIE_OK) {
-    printf("SKIP (server init failed)\n");
-    xie_server_destroy(srv);
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
     return;
   }
 
   /* 意図的に壊れた magic を持つパケット */
   XiePacket bad = make_valid_packet(1);
   bad.magic     = 0xDEAD;
-  send_mock_packet(port, &bad);
+  send_mock_packet(f.port, &bad);
 
-  int recv_ret = xie_server_recv(srv);
+  int recv_ret = XIE_TIMEOUT;
+  for (int i = 0; i < 10; i++) {
+    recv_ret = xie_server_recv(f.srv);
+    if (recv_ret != XIE_TIMEOUT) break;
+  }
+  
   ASSERT(recv_ret == XIE_DROP);
-
-  xie_server_destroy(srv);
+  teardown_server(&f);
 }
 
 /*
@@ -277,43 +242,29 @@ static void test_invalid_packet_dropped(void) {
 static void test_lost_count(void) {
   TEST("io: sample_id ギャップ → lost_count 増加");
 
-  int port = allocate_free_port();
-  if (port < 0) {
-    printf("SKIP (port allocation failed)\n");
-    return;
-  }
-
-  XieServer *srv = xie_server_create();
-  if (!srv) {
-    printf("SKIP (server create failed)\n");
-    return;
-  }
-
-  int init = xie_server_init(srv, "127.0.0.1", port);
-  if (init != XIE_OK) {
-    printf("SKIP (server init failed)\n");
-    xie_server_destroy(srv);
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
     return;
   }
 
   /* 1 枚目: sample_id = 1 */
   XiePacket first = make_valid_packet(1);
-  send_mock_packet(port, &first);
+  send_mock_packet(f.port, &first);
   for (int i = 0; i < 10; i++) {
-    if (xie_server_recv(srv) == XIE_OK) break;
+    if (xie_server_recv(f.srv) == XIE_OK) break;
   }
 
   /* 2 枚目: sample_id = 11 → lost = 9 */
   XiePacket jumped = make_valid_packet(11);
-  send_mock_packet(port, &jumped);
+  send_mock_packet(f.port, &jumped);
   for (int i = 0; i < 10; i++) {
-    if (xie_server_recv(srv) == XIE_OK) break;
+    if (xie_server_recv(f.srv) == XIE_OK) break;
   }
 
-  uint32_t lost = xie_server_lost(srv);
+  uint32_t lost = xie_server_lost(f.srv);
   ASSERT(lost == 9);
-
-  xie_server_destroy(srv);
+  teardown_server(&f);
 }
 
 /* ------------------------------------------------------------------ */

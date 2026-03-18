@@ -20,6 +20,9 @@ int xie_udp_init(UdpReceiver *udp, const char *bind_ip, int port, int recv_timeo
 // 戻り値: 受信バイト数（>0）、タイムアウト（XIE_TIMEOUT）、エラー（XIE_ERROR）
 int xie_udp_recv(UdpReceiver *udp, void *buffer, size_t buffer_size);
 
+// バインドされているポート番号を取得。失敗時 -1 を返す。
+int xie_udp_get_port(const UdpReceiver *udp);
+
 // クローズ
 void xie_udp_close(UdpReceiver *udp);
 
