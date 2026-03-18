@@ -1,8 +1,6 @@
 name: CI Pipeline
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
     branches:
@@ -17,24 +15,18 @@ jobs:
   format:
     name: Format Check
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - run: sudo apt-get update && sudo apt-get install -y clang-format
-
       - name: Format check (C)
         run: |
           find xinputedge-receiver/src xinputedge-receiver/include xinputedge-receiver/protocol \
             \( -name '*.c' -o -name '*.h' \) \
             | xargs clang-format --dry-run --Werror
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-
       - run: dotnet restore xinputedge-sender/xinputedge-sender.csproj
-
       - name: Format check (C#)
         run: |
           dotnet format xinputedge-sender/xinputedge-sender.csproj \
@@ -44,32 +36,28 @@ jobs:
   # Job 2: Static Analysis
   # ============================================================
   static-analysis:
+    name: Static Analysis
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - run: sudo apt-get update && sudo apt-get install -y cppcheck
-
       - name: Run cppcheck
         run: |
           cppcheck \
             --enable=all \
             --inconclusive \
+            --suppress=missingIncludeSystem \
             --quiet \
             --xml \
             --xml-version=2 \
             -I xinputedge-receiver/include \
             xinputedge-receiver/src 2> cppcheck.xml
-
       - name: Static Analysis Summary
         if: always()
         run: |
           echo "## 🔍 Static Analysis" >> $GITHUB_STEP_SUMMARY
-
           if [ -s cppcheck.xml ]; then
             COUNT=$(grep -c "<error " cppcheck.xml || true)
-
             if [ "$COUNT" -eq 0 ]; then
               echo "✅ No issues found" >> $GITHUB_STEP_SUMMARY
             else
@@ -77,12 +65,10 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### Top Issues" >> $GITHUB_STEP_SUMMARY
               echo '```text' >> $GITHUB_STEP_SUMMARY
-
               grep "<error " cppcheck.xml \
                 | sed 's/.*msg="\([^"]*\)".*file="\([^"]*\)".*line="\([^"]*\)".*/\2:\3 \1/' \
                 | head -20 \
                 >> $GITHUB_STEP_SUMMARY
-
               echo '```' >> $GITHUB_STEP_SUMMARY
             fi
           else
@@ -90,70 +76,95 @@ jobs:
           fi
 
   # ============================================================
-  # Job 3: Build & Test
+  # Job 3: Build & Test (Release)
   # ============================================================
-  build-test:
+  build-release:
+    name: Build & Test (Release)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
-
-      - name: Configure
-        run: cmake -S xinputedge-receiver -B build -DBUILD_TESTS=ON
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Run Tests
+      - name: Build C# (Release)
+        run: dotnet build xinputedge-sender/examples/BasicSender/BasicSender.csproj -c Release -warnaserror
+      - name: Configure CMake (Release)
+        run: cmake -S xinputedge-receiver -B build/release -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+      - name: Build C (Release)
+        run: cmake --build build/release
+      - name: Run Tests (Release)
         run: |
-          cd build
+          cd build/release
           ctest --output-on-failure --verbose | tee test.log
-
-      - name: Test Summary Dashboard
+      - name: Test Summary Dashboard (Release)
         if: always()
         run: |
-          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
-
-          TOTAL=$(grep -c "Test #" build/test.log || true)
-          FAILED=$(grep -c "***Failed" build/test.log || true)
-
+          echo "## 🚀 Release Test Results" >> $GITHUB_STEP_SUMMARY
+          TOTAL=$(grep -c "Test #" build/release/test.log || true)
+          FAILED=$(grep -c "***Failed" build/release/test.log || true)
           echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
-
           if [ "$FAILED" -eq 0 ]; then
             echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Failed: $FAILED" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-
             echo "### ❌ Failed Tests (context)" >> $GITHUB_STEP_SUMMARY
             echo '```diff' >> $GITHUB_STEP_SUMMARY
-
-            grep -n -A3 -B2 "***Failed" build/test.log >> $GITHUB_STEP_SUMMARY
-
+            grep -n -A3 -B2 "***Failed" build/release/test.log >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
   # ============================================================
-  # Job 4: Valgrind
+  # Job 4: Build & Test (Debug)
   # ============================================================
-  valgrind:
+  build-debug:
+    name: Build & Test (Debug)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
+      - name: Configure CMake (Debug)
+        run: cmake -S xinputedge-receiver -B build/debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+      - name: Build C (Debug)
+        run: cmake --build build/debug
+      - name: Run Tests (Debug)
+        run: |
+          cd build/debug
+          ctest --output-on-failure --verbose | tee test.log
+      - name: Test Summary Dashboard (Debug)
+        if: always()
+        run: |
+          echo "## 🐛 Debug Test Results" >> $GITHUB_STEP_SUMMARY
+          TOTAL=$(grep -c "Test #" build/debug/test.log || true)
+          FAILED=$(grep -c "***Failed" build/debug/test.log || true)
+          echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
+          if [ "$FAILED" -eq 0 ]; then
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failed: $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ Failed Tests (context)" >> $GITHUB_STEP_SUMMARY
+            echo '```diff' >> $GITHUB_STEP_SUMMARY
+            grep -n -A3 -B2 "***Failed" build/debug/test.log >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
+  # ============================================================
+  # Job 5: Valgrind
+  # ============================================================
+  valgrind:
+    name: Valgrind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y valgrind cmake gcc build-essential
-
-      - run: cmake -S xinputedge-receiver -B build -DBUILD_TESTS=ON
-      - run: cmake --build build
-
+      - run: cmake -S xinputedge-receiver -B build/valgrind -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+      - run: cmake --build build/valgrind
       - name: Run Valgrind
         run: |
-          cd build
+          cd build/valgrind
           rm -f vg_*.log
-
           i=0
           ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while read cmd; do
             i=$((i+1))
@@ -163,90 +174,72 @@ jobs:
               --log-file=vg_$i.log \
               $cmd || true
           done
-
       - name: Leak Dashboard
         if: always()
         run: |
           echo "## 🧠 Memory Analysis (Valgrind)" >> $GITHUB_STEP_SUMMARY
-
-          FILES=$(ls build/vg_*.log 2>/dev/null || true)
-
+          FILES=$(ls build/valgrind/vg_*.log 2>/dev/null || true)
           if [ -z "$FILES" ]; then
             echo "⚠️ No Valgrind logs found" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-
-          LEAK_COUNT=$(grep -r "definitely lost" build || true | wc -l)
-
+          LEAK_COUNT=$(grep -r "definitely lost" build/valgrind || true | wc -l)
           if [ "$LEAK_COUNT" -eq 0 ]; then
             echo "✅ No leaks detected" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Memory leaks detected: $LEAK_COUNT" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-
             echo "### 🔥 Leak Function Ranking" >> $GITHUB_STEP_SUMMARY
             echo '```text' >> $GITHUB_STEP_SUMMARY
-
-            grep -r "by 0x" build \
+            grep -r "by 0x" build/valgrind \
               | sed 's/.*by 0x[0-9A-F]*: //' \
               | sort \
               | uniq -c \
               | sort -nr \
               | head -20 \
               >> $GITHUB_STEP_SUMMARY
-
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
   # ============================================================
-  # Job 5: Coverage（品質ゲート付き）
+  # Job 6: Coverage（品質ゲート付き）
   # ============================================================
   coverage:
+    name: Coverage
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - run: sudo apt-get update && sudo apt-get install -y gcc cmake gcovr
-
-      - run: cmake -S xinputedge-receiver -B build -DENABLE_COVERAGE=ON -DBUILD_TESTS=ON
-      - run: cmake --build build
-      - run: cd build && ctest
-
+      - run: cmake -S xinputedge-receiver -B build/coverage -DENABLE_COVERAGE=ON -DBUILD_TESTS=ON
+      - run: cmake --build build/coverage
+      - run: cd build/coverage && ctest
       - name: Generate Coverage
         id: coverage
         run: |
-          cd build
+          cd build/coverage
           set +e
-
           gcovr \
             --txt coverage.txt \
             --print-summary \
             --fail-under-line 30 \
             --fail-under-branch 25 \
             > summary.txt
-
           EXIT_CODE=$?
           set -e
-
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-
       - name: Coverage Summary
         if: always()
         run: |
           echo "## 📊 Coverage" >> $GITHUB_STEP_SUMMARY
-
           echo "### Summary" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
-          cat build/summary.txt >> $GITHUB_STEP_SUMMARY
+          cat build/coverage/summary.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Low Coverage (<50%)" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
-          awk '$4 ~ /%/ && $4+0 < 50 {print}' build/coverage.txt >> $GITHUB_STEP_SUMMARY || true
+          awk '$4 ~ /%/ && $4+0 < 50 {print}' build/coverage/coverage.txt >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
-
       - name: Fail if coverage not met
         if: steps.coverage.outputs.exit_code != '0'
         run: exit 1
