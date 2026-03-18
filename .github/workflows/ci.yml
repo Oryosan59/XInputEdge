@@ -92,6 +92,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
+      - name: Cache GoogleTest (Release)
+        uses: actions/cache@v4
+        with:
+          path: build/release/_deps
+          key: ${{ runner.os }}-gtest-release-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
       - name: Build C# (Release)
         run: dotnet build xinputedge-sender/examples/BasicSender/BasicSender.csproj -c Release -warnaserror
       - name: Configure CMake (Release)
@@ -132,6 +137,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
+      - name: Cache GoogleTest (Debug)
+        uses: actions/cache@v4
+        with:
+          path: build/debug/_deps
+          key: ${{ runner.os }}-gtest-debug-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
       - name: Configure CMake (Debug)
         run: cmake -S xinputedge-receiver -B build/debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
       - name: Build C (Debug)
@@ -170,6 +180,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y valgrind cmake gcc build-essential
+      - name: Cache GoogleTest (Valgrind)
+        uses: actions/cache@v4
+        with:
+          # ValgrindジョブはDebugビルドと同じ設定なのでキャッシュキーを共有して高速化
+          path: build/valgrind/_deps
+          key: ${{ runner.os }}-gtest-debug-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
       - run: cmake -S xinputedge-receiver -B build/valgrind -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
       - run: cmake --build build/valgrind
       - name: Run Valgrind
@@ -224,6 +240,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y gcc cmake gcovr
+      - name: Cache GoogleTest (Coverage)
+        uses: actions/cache@v4
+        with:
+          # CoverageジョブもDebugベースなのでキャッシュキーを共有
+          path: build/coverage/_deps
+          key: ${{ runner.os }}-gtest-debug-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
       - run: cmake -S xinputedge-receiver -B build/coverage -DENABLE_COVERAGE=ON -DBUILD_TESTS=ON
       - run: cmake --build build/coverage
       - run: cd build/coverage && ctest
