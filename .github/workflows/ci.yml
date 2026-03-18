@@ -1,5 +1,8 @@
 name: CI Pipeline
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches:
@@ -108,7 +111,7 @@ jobs:
       - name: Run unit tests (Release)
         run: |
           cd xinputedge-receiver/build/release
-          ctest --output-on-failure
+          ctest --output-on-failure --verbose -j$(nproc)
 
   # ============================================================
   # Job 4: Build Debug & Test (Fast Job)
@@ -129,7 +132,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: xinputedge-receiver/build/debug/_deps
-          key: ${{ runner.os }}-gtest-v1.14.0
+          key: ${{ runner.os }}-gtest-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
 
       - name: Configure CMake (Debug)
         run: |
@@ -144,7 +147,7 @@ jobs:
       - name: Run unit tests (Debug)
         run: |
           cd xinputedge-receiver/build/debug
-          ctest --output-on-failure
+          ctest --output-on-failure -j$(nproc)
 
   # ============================================================
   # Job 5: Valgrind & Coverage (Slow Job)
@@ -166,7 +169,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: xinputedge-receiver/build/coverage/_deps
-          key: ${{ runner.os }}-gtest-v1.14.0
+          key: ${{ runner.os }}-gtest-coverage-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
 
       - name: Configure CMake (Coverage & Valgrind)
         run: |
@@ -183,7 +186,13 @@ jobs:
       - name: Run Tests (Valgrind)
         run: |
           cd xinputedge-receiver/build/coverage
-          ctest --output-on-failure
+          ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while read cmd; do
+            valgrind --leak-check=full \
+                     --show-leak-kinds=all \
+                     --track-origins=yes \
+                     --error-exitcode=1 \
+                     $cmd
+          done
 
       - name: Generate Coverage Report
         run: |
@@ -191,7 +200,10 @@ jobs:
           gcovr --root ${{ github.workspace }}/xinputedge-receiver \
                 --filter ${{ github.workspace }}/xinputedge-receiver/src \
                 --html-details coverage.html \
-                --fail-under-line 25 \
+                --print-summary \
+                --txt \
+                --fail-under-line 70 \
+                --fail-under-branch 50 \
                 --txt-metric branch \
                 .
 
