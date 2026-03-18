@@ -120,6 +120,7 @@ namespace XInputEdge
                 if (result == XInputNative.ERROR_DEVICE_NOT_CONNECTED)
                 {
                     if (_wasConnected) { _wasConnected = false; OnDisconnected?.Invoke(); }
+                    Thread.Sleep(500); // 接続待ちの状態ではタイトなスピンを避けてCPU負荷を下げる
                     continue;
                 }
 
@@ -158,10 +159,12 @@ namespace XInputEdge
                 {
                     _socket.SendTo(_sendBuffer, XieProtocol.XIE_PACKET_SIZE, SocketFlags.None, _endpoint);
 
+#if DEBUG
                     if ((_sampleId % 100) == 0)
                     {
                         Console.WriteLine($"[XIE] Sent {_sampleId} packets to {_endpoint}");
                     }
+#endif
                 }
             }
             catch (Exception ex)
