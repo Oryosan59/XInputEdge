@@ -256,6 +256,7 @@ jobs:
           set +e
           gcovr \
             --txt coverage.txt \
+            --html-details coverage.html \
             --print-summary \
             --fail-under-line 0 \
             --fail-under-branch 0 \
@@ -266,19 +267,38 @@ jobs:
       - name: Coverage Summary
         if: always()
         run: |
-          echo "## 📊 Coverage" >> $GITHUB_STEP_SUMMARY
-          echo "### Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Coverage Status" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.coverage.outputs.exit_code }}" -eq 0 ]; then
+            echo "✅ Coverage threshold satisfied" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Coverage threshold NOT satisfied" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
           cat build/coverage/summary.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>🔽 カバレッジ50%未満のファイル詳細</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Low Coverage Files (<50%)" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
           awk '$4 ~ /%/ && $4+0 < 50 {print}' build/coverage/coverage.txt >> $GITHUB_STEP_SUMMARY || true
+          grep "^TOTAL" build/coverage/coverage.txt >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "<details><summary>🔽 Click to view full coverage details</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat build/coverage/coverage.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
+      - name: Upload Coverage Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage/coverage.txt
+            build/coverage/summary.txt
+            build/coverage/coverage*.html
       - name: Fail if coverage not met
         if: steps.coverage.outputs.exit_code != '0'
         run: exit 1
