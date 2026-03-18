@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
-project(xinputedge_receiver C)
+project(xinputedge_receiver C CXX)
 
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
+
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
 
 # ---------------------------------------------------------------
 # Static library
@@ -33,6 +36,15 @@ target_compile_options(xinputedge PRIVATE
     -Werror
     -pedantic
 )
+
+if(ENABLE_COVERAGE)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(xinputedge PUBLIC --coverage -O0 -g)
+        target_link_options(xinputedge PUBLIC --coverage)
+    else()
+        message(WARNING "Coverage is not supported for compiler ${CMAKE_C_COMPILER_ID}")
+    endif()
+endif()
 
 # ---------------------------------------------------------------
 # Install ターゲット
