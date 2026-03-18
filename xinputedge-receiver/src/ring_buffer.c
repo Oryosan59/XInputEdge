@@ -73,7 +73,6 @@ int xie_ring_buffer_read(const XieRingBuffer *rb, XiePacket *out_packet) {
   const XieRingSlot *slot = &rb->slots[index];
 
   // Seqlock 読み込みループ
-  uint32_t seq1, seq2;
   int retries = 0;
 
   // リアルタイム性重視のため短いリトライ
@@ -81,8 +80,8 @@ int xie_ring_buffer_read(const XieRingBuffer *rb, XiePacket *out_packet) {
 
   do {
     // Acquire:
-    // 以降のpacket読み取りとの順序を保証
-    seq1 = atomic_load_explicit(&slot->sequence, memory_order_acquire);
+    // 以降のpacket読み取りとの順序を保証 (変数のスコープをループ内に限定)
+    uint32_t seq1 = atomic_load_explicit(&slot->sequence, memory_order_acquire);
 
     // 奇数＝書き込み中 → 破損の可能性があるためリトライ
     if (seq1 & 1) {
@@ -98,7 +97,7 @@ int xie_ring_buffer_read(const XieRingBuffer *rb, XiePacket *out_packet) {
     *out_packet = slot->packet;
 
     // もう一度Seqを読む (Acquire: この前のデータ読み込みに対して順序付け)
-    seq2 = atomic_load_explicit(&slot->sequence, memory_order_acquire);
+    uint32_t seq2 = atomic_load_explicit(&slot->sequence, memory_order_acquire);
 
     // 前後で一致 → 読み取り中に変更なし（整合性OK）
     if (seq1 == seq2) {
