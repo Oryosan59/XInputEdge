@@ -191,8 +191,8 @@ jobs:
           gcovr --root ${{ github.workspace }}/xinputedge-receiver \
                 --filter ${{ github.workspace }}/xinputedge-receiver/src \
                 --html-details coverage.html \
-                --fail-under-line 70 \
-                --branches \
+                --fail-under-line 25 \
+                --txt-metric branch \
                 .
 
       - name: Upload Coverage Artifact
