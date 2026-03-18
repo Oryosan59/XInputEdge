@@ -95,7 +95,6 @@ jobs:
             -c Release -warnaserror
 
       # --- C99: Release ビルド + ctest ---
-      # 警告ポリシーは CMakeLists.txt の target_compile_options で管理
       - name: Configure CMake (Release)
         run: |
           cmake -S xinputedge-receiver -B xinputedge-receiver/build/release \
@@ -112,11 +111,11 @@ jobs:
           ctest --output-on-failure
 
   # ============================================================
-  # Job 4: Build (Debug)
-  # デバッグシンボル付きビルドで未定義動作・メモリ問題を早期発見
+  # Job 4: Build Debug & Test (Fast Job)
+  # デバッグシンボル付き・Valgrindなしで高速にフィードバック
   # ============================================================
-  build-debug:
-    name: Build Debug
+  build-debug-fast:
+    name: Build Debug & Test (Fast)
     runs-on: ubuntu-latest
 
     steps:
@@ -125,6 +124,12 @@ jobs:
 
       - name: Setup C/C++ Compiler
         run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
+
+      - name: Cache GoogleTest
+        uses: actions/cache@v4
+        with:
+          path: xinputedge-receiver/build/debug/_deps
+          key: ${{ runner.os }}-gtest-v1.14.0
 
       - name: Configure CMake (Debug)
         run: |
@@ -140,3 +145,59 @@ jobs:
         run: |
           cd xinputedge-receiver/build/debug
           ctest --output-on-failure
+
+  # ============================================================
+  # Job 5: Valgrind & Coverage (Slow Job)
+  # メインへのpush時のみ実行し、PRをブロックしない
+  # ============================================================
+  coverage-valgrind-slow:
+    name: Coverage & Valgrind (Slow)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Compiler and Tools
+        run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential valgrind gcovr
+
+      - name: Cache GoogleTest
+        uses: actions/cache@v4
+        with:
+          path: xinputedge-receiver/build/coverage/_deps
+          key: ${{ runner.os }}-gtest-v1.14.0
+
+      - name: Configure CMake (Coverage & Valgrind)
+        run: |
+          cmake -S xinputedge-receiver -B xinputedge-receiver/build/coverage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_EXAMPLES=ON \
+            -DBUILD_TESTS=ON \
+            -DENABLE_COVERAGE=ON \
+            -DENABLE_VALGRIND=ON
+
+      - name: Build
+        run: cmake --build xinputedge-receiver/build/coverage
+
+      - name: Run Tests (Valgrind)
+        run: |
+          cd xinputedge-receiver/build/coverage
+          ctest --output-on-failure
+
+      - name: Generate Coverage Report
+        run: |
+          cd xinputedge-receiver/build/coverage
+          gcovr --root ${{ github.workspace }}/xinputedge-receiver \
+                --filter ${{ github.workspace }}/xinputedge-receiver/src \
+                --html-details coverage.html \
+                --fail-under-line 70 \
+                --branches \
+                .
+
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: xinputedge-receiver/build/coverage/coverage*.html

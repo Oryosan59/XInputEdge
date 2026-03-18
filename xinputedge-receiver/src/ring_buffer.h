@@ -5,13 +5,19 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {
-#endif
-
+#include <atomic>
+#define XIE_ATOMIC(type) std::atomic<type>
+#else
 #if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
 #include <stdatomic.h>
+#define XIE_ATOMIC(type) _Atomic type
 #else
 #error "XInputEdge requires C11 with stdatomic.h support for lock-free ring buffer."
+#endif
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 // 約 64ms 履歴（1kHz 時）
@@ -22,13 +28,13 @@ extern "C" {
 
 typedef struct {
   XiePacket packet;
-  _Atomic uint32_t sequence;
+  XIE_ATOMIC(uint32_t) sequence;
 } XieRingSlot;
 
 typedef struct {
   XieRingSlot slots[XIE_RING_BUFFER_SIZE];
-  _Atomic uint16_t newest_sample_id;
-  _Atomic int has_data;
+  XIE_ATOMIC(uint16_t) newest_sample_id;
+  XIE_ATOMIC(int) has_data;
 } XieRingBuffer;
 
 // バッファの初期化
