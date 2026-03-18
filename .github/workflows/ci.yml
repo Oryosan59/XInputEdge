@@ -186,8 +186,8 @@ jobs:
       - name: Run Tests (Valgrind)
         run: |
           cd xinputedge-receiver/build/coverage
-          ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while read cmd; do
-            valgrind --leak-check=full \
+          ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while IFS= read -r cmd; do
+            eval valgrind --leak-check=full \
                      --show-leak-kinds=all \
                      --track-origins=yes \
                      --error-exitcode=1 \
