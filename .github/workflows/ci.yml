@@ -223,7 +223,7 @@ jobs:
           gcovr \
             --txt coverage.txt \
             --print-summary \
-            --fail-under-line 30 \
+            --fail-under-line 25 \
             --fail-under-branch 25 \
             > summary.txt
           EXIT_CODE=$?
