@@ -49,7 +49,8 @@ int xie_server_init(XieServer *s, const char *bind_ip, int port) {
 }
 
 int xie_server_get_port(const XieServer *s) {
-  if (!s) return -1;
+  if (!s)
+    return -1;
   return xie_udp_get_port(&s->udp);
 }
 

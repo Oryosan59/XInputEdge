@@ -135,7 +135,7 @@ static void test_normal_receive(void) {
 
   /* sample_id = 1 のパケットを送信 */
   XiePacket pkt = make_valid_packet(1);
-  int sent = send_mock_packet(f.port, &pkt);
+  send_mock_packet(f.port, &pkt);
 
   int recv_ret = XIE_TIMEOUT;
   /* 初回のパケット到達を待つ */
