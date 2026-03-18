@@ -38,11 +38,11 @@ target_compile_options(xinputedge PRIVATE
 )
 
 if(ENABLE_COVERAGE)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    if((CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang") AND (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang"))
         target_compile_options(xinputedge PUBLIC --coverage -O0 -g)
         target_link_options(xinputedge PUBLIC --coverage)
     else()
-        message(WARNING "Coverage is not supported for compiler ${CMAKE_C_COMPILER_ID}")
+        message(WARNING "Coverage is not supported for the current C/CXX compiler combination: C=${CMAKE_C_COMPILER_ID}, CXX=${CMAKE_CXX_COMPILER_ID}")
     endif()
 endif()
 

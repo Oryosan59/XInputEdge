@@ -1,10 +1,7 @@
 #include <gtest/gtest.h>
-#include <vector>
 
-extern "C" {
 #include "../src/ring_buffer.h"
 #include "../src/packet.h"
-}
 
 // ------------------------------------------------------------------
 // Tests for Ring Buffer
@@ -31,7 +28,7 @@ protected:
 };
 
 TEST_F(RingBufferTest, InitEmpty) {
-    EXPECT_EQ(rb.has_data, 0);
+    EXPECT_EQ((int)rb.has_data, 0);
     XiePacket out;
     EXPECT_EQ(xie_ring_buffer_read(&rb, &out), 0);
 }
@@ -45,7 +42,7 @@ TEST_F(RingBufferTest, WrapAroundBoundary) {
         xie_ring_buffer_write(&rb, &p);
     }
     
-    EXPECT_NE(rb.has_data, 0);
+    EXPECT_NE((int)rb.has_data, 0);
     
     XiePacket out;
     int read_success = xie_ring_buffer_read(&rb, &out);
@@ -63,7 +60,7 @@ TEST_F(RingBufferTest, StateInvariance) {
     // Write 1 packet
     XiePacket p = makePacket(42);
     xie_ring_buffer_write(&rb, &p);
-    EXPECT_NE(rb.has_data, 0);
+    EXPECT_NE((int)rb.has_data, 0);
 
     // Call with NULL, state shouldn't break
     xie_ring_buffer_write(&rb, nullptr);
@@ -73,7 +70,7 @@ TEST_F(RingBufferTest, StateInvariance) {
     // Should still be able to read normally (though dejitter might need more packets to match ID 42 exactly, 
     // actually it will return whatever is at newest - delay index, which is index - 5, so it will be 0-initialized slots)
     // Wait, the test here is just ensuring it doesn't crash or lose the 'has_data' state.
-    EXPECT_NE(rb.has_data, 0);
+    EXPECT_NE((int)rb.has_data, 0);
     
     // Read with NULL
     int read_ret = xie_ring_buffer_read(nullptr, &out);
@@ -91,7 +88,7 @@ protected:
 
     void SetUp() override {
         // Initialize a standard valid packet
-        std::memset(&valid_packet, 0, sizeof(valid_packet));
+        valid_packet = {};
         valid_packet.magic = XIE_MAGIC;
         valid_packet.version = XIE_VERSION;
         valid_packet.typeAndFlags = XIE_MAKE_TYPE_FLAGS(XIE_TYPE_GAMEPAD, 0);
