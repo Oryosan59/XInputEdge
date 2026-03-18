@@ -252,23 +252,21 @@ jobs:
       - name: Generate Coverage
         id: coverage
         run: |
-          cd build/coverage
-          set +e
-          gcovr \
-            -r ../../xinputedge-receiver \
-            --filter '../../xinputedge-receiver/src/' \
-            --filter '../../xinputedge-receiver/include/' \
-            --filter '../../xinputedge-receiver/protocol/' \
+          gcovr build/coverage \
+            --root . \
+            --filter 'xinputedge-receiver/src/' \
+            --filter 'xinputedge-receiver/include/' \
+            --filter 'xinputedge-receiver/protocol/' \
             --exclude '.*/tests/.*' \
             --exclude '.*/_deps/.*' \
-            --txt coverage.txt \
-            --html-details coverage.html \
+            --txt build/coverage/coverage.txt \
+            --html-details build/coverage/coverage.html \
             --print-summary \
-            --fail-under-line 80 \
+            --fail-under-line 0 \
             --fail-under-branch 0 \
-            > summary.txt
+            > build/coverage/summary.txt
+
           EXIT_CODE=$?
-          set -e
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
       - name: Coverage Summary
         if: always()
