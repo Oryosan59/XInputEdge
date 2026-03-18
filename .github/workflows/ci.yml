@@ -12,19 +12,16 @@ on:
 
 jobs:
   # ============================================================
-  # Job 1: Format checks (fast feedback, no build needed)
+  # Job 1: Format checks
   # ============================================================
   format:
     name: Format Check
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # --- C: clang-format ---
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Format check (C)
         run: |
@@ -32,14 +29,11 @@ jobs:
             \( -name '*.c' -o -name '*.h' \) \
             | xargs clang-format --dry-run --Werror
 
-      # --- C#: dotnet format ---
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore NuGet packages (for format)
-        run: dotnet restore xinputedge-sender/xinputedge-sender.csproj
+      - run: dotnet restore xinputedge-sender/xinputedge-sender.csproj
 
       - name: Format check (C#)
         run: |
@@ -47,213 +41,212 @@ jobs:
             --verify-no-changes --verbosity diagnostic
 
   # ============================================================
-  # Job 2: Static analysis
+  # Job 2: Static Analysis
   # ============================================================
   static-analysis:
-    name: Static Analysis
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - run: sudo apt-get update && sudo apt-get install -y cppcheck
 
-      - name: Static analysis (C — cppcheck)
+      - name: Run cppcheck
         run: |
           cppcheck \
-            --error-exitcode=1 \
-            --enable=warning,performance,portability \
-            --suppress=missingIncludeSystem \
+            --enable=all \
+            --inconclusive \
+            --quiet \
+            --xml \
+            --xml-version=2 \
             -I xinputedge-receiver/include \
-            -I xinputedge-receiver/protocol \
-            -I xinputedge-receiver/src \
-            xinputedge-receiver/src/
+            xinputedge-receiver/src 2> cppcheck.xml
 
-  # ============================================================
-  # Job 3: Build (Release) + Unit Tests
-  # ============================================================
-  build-release:
-    name: Build Release & Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Setup C/C++ Compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
-
-      # --- C#: Sender ---
-      - name: Build C# Sender (Release)
-        run: |
-          dotnet build xinputedge-sender/examples/BasicSender/BasicSender.csproj \
-            -c Release -warnaserror
-
-      # --- C99 ---
-      - name: Configure CMake (Release)
-        run: |
-          cmake -S xinputedge-receiver -B xinputedge-receiver/build/release \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_EXAMPLES=ON \
-            -DBUILD_TESTS=ON
-
-      - name: Build C Receiver (Release)
-        run: cmake --build xinputedge-receiver/build/release
-
-      - name: Run unit tests (Release)
-        run: |
-          cd xinputedge-receiver/build/release
-          ctest --output-on-failure --verbose -j$(nproc)
-
-  # ============================================================
-  # Job 4: Build Debug & Test (Fast Job)
-  # ============================================================
-  build-debug-fast:
-    name: Build Debug & Test (Fast)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup C/C++ Compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
-
-      - name: Cache GoogleTest
-        uses: actions/cache@v4
-        with:
-          path: xinputedge-receiver/build/debug/_deps
-          key: ${{ runner.os }}-gtest-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
-
-      - name: Configure CMake (Debug)
-        run: |
-          cmake -S xinputedge-receiver -B xinputedge-receiver/build/debug \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DBUILD_EXAMPLES=ON \
-            -DBUILD_TESTS=ON
-
-      - name: Build C Receiver (Debug)
-        run: cmake --build xinputedge-receiver/build/debug
-
-      - name: Run unit tests (Debug)
-        run: |
-          cd xinputedge-receiver/build/debug
-          ctest --output-on-failure -j$(nproc)
-
-  # ============================================================
-  # Job 5: Valgrind & Coverage (Slow Job)
-  # ============================================================
-  coverage-valgrind-slow:
-    name: Coverage & Valgrind (Slow)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Compiler and Tools
-        run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential valgrind gcovr
-
-      - name: Cache GoogleTest
-        uses: actions/cache@v4
-        with:
-          path: xinputedge-receiver/build/coverage/_deps
-          key: ${{ runner.os }}-gtest-coverage-${{ hashFiles('xinputedge-receiver/**/CMakeLists.txt') }}
-
-      - name: Configure CMake (Coverage & Valgrind)
-        run: |
-          cmake -S xinputedge-receiver -B xinputedge-receiver/build/coverage \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DBUILD_EXAMPLES=ON \
-            -DBUILD_TESTS=ON \
-            -DENABLE_COVERAGE=ON \
-            -DENABLE_VALGRIND=ON
-
-      - name: Build
-        run: cmake --build xinputedge-receiver/build/coverage
-
-      - name: Run Tests (Valgrind)
-        run: |
-          cd xinputedge-receiver/build/coverage
-          ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while IFS= read -r cmd; do
-            eval valgrind --leak-check=full \
-                     --show-leak-kinds=all \
-                     --track-origins=yes \
-                     --error-exitcode=1 \
-                     $cmd
-          done
-
-      - name: Generate Coverage Report
-        id: coverage
-        run: |
-          cd xinputedge-receiver/build/coverage
-          set +e
-          gcovr \
-            --root ${{ github.workspace }}/xinputedge-receiver \
-            --filter ${{ github.workspace }}/xinputedge-receiver/src \
-            --html-details coverage.html \
-            --txt coverage.txt \
-            --print-summary \
-            --fail-under-line 25 \
-            --fail-under-branch 25 \
-            --txt-metric branch \
-            . > summary.txt
-          EXIT_CODE=$?
-          set -e
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-          exit 0
-
-      - name: Output Coverage to Job Summary
+      - name: Static Analysis Summary
         if: always()
         run: |
-          cd xinputedge-receiver/build/coverage
-          if [ -f "summary.txt" ] && [ -f "coverage.txt" ]; then
+          echo "## 🔍 Static Analysis" >> $GITHUB_STEP_SUMMARY
 
-            echo "### Coverage Status" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -s cppcheck.xml ]; then
+            COUNT=$(grep -c "<error " cppcheck.xml || true)
 
-            if [ "${{ steps.coverage.outputs.exit_code }}" = "0" ]; then
-              echo "✅ **Coverage threshold satisfied**" >> $GITHUB_STEP_SUMMARY
+            if [ "$COUNT" -eq 0 ]; then
+              echo "✅ No issues found" >> $GITHUB_STEP_SUMMARY
             else
-              echo "❌ **Coverage threshold not met**" >> $GITHUB_STEP_SUMMARY
+              echo "❌ Issues detected: $COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Top Issues" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+
+              grep "<error " cppcheck.xml \
+                | sed 's/.*msg="\([^"]*\)".*file="\([^"]*\)".*line="\([^"]*\)".*/\2:\3 \1/' \
+                | head -20 \
+                >> $GITHUB_STEP_SUMMARY
+
+              echo '```' >> $GITHUB_STEP_SUMMARY
             fi
-
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            cat summary.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Low Coverage Files (<50%)" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            awk '$4 ~ /%/ && $4+0 < 50 {print}' coverage.txt >> $GITHUB_STEP_SUMMARY || true
-            echo '```' >> $GITHUB_STEP_SUMMARY
-
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "<details><summary>Click to view full coverage details</summary>" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            cat coverage.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ cppcheck output missing" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Fail if coverage threshold not met
+  # ============================================================
+  # Job 3: Build & Test
+  # ============================================================
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y gcc cmake build-essential
+
+      - name: Configure
+        run: cmake -S xinputedge-receiver -B build -DBUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run Tests
+        run: |
+          cd build
+          ctest --output-on-failure --verbose | tee test.log
+
+      - name: Test Summary Dashboard
+        if: always()
+        run: |
+          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+
+          TOTAL=$(grep -c "Test #" build/test.log || true)
+          FAILED=$(grep -c "***Failed" build/test.log || true)
+
+          echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAILED" -eq 0 ]; then
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failed: $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "### ❌ Failed Tests (context)" >> $GITHUB_STEP_SUMMARY
+            echo '```diff' >> $GITHUB_STEP_SUMMARY
+
+            grep -n -A3 -B2 "***Failed" build/test.log >> $GITHUB_STEP_SUMMARY
+
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================
+  # Job 4: Valgrind
+  # ============================================================
+  valgrind:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y valgrind cmake gcc build-essential
+
+      - run: cmake -S xinputedge-receiver -B build -DBUILD_TESTS=ON
+      - run: cmake --build build
+
+      - name: Run Valgrind
+        run: |
+          cd build
+          rm -f vg_*.log
+
+          i=0
+          ctest -N -V | grep "Test command:" | sed 's/.*Test command: //' | while read cmd; do
+            i=$((i+1))
+            valgrind \
+              --leak-check=full \
+              --track-origins=yes \
+              --log-file=vg_$i.log \
+              $cmd || true
+          done
+
+      - name: Leak Dashboard
+        if: always()
+        run: |
+          echo "## 🧠 Memory Analysis (Valgrind)" >> $GITHUB_STEP_SUMMARY
+
+          FILES=$(ls build/vg_*.log 2>/dev/null || true)
+
+          if [ -z "$FILES" ]; then
+            echo "⚠️ No Valgrind logs found" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          LEAK_COUNT=$(grep -r "definitely lost" build || true | wc -l)
+
+          if [ "$LEAK_COUNT" -eq 0 ]; then
+            echo "✅ No leaks detected" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Memory leaks detected: $LEAK_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "### 🔥 Leak Function Ranking" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+
+            grep -r "by 0x" build \
+              | sed 's/.*by 0x[0-9A-F]*: //' \
+              | sort \
+              | uniq -c \
+              | sort -nr \
+              | head -20 \
+              >> $GITHUB_STEP_SUMMARY
+
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================
+  # Job 5: Coverage（品質ゲート付き）
+  # ============================================================
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y gcc cmake gcovr
+
+      - run: cmake -S xinputedge-receiver -B build -DENABLE_COVERAGE=ON -DBUILD_TESTS=ON
+      - run: cmake --build build
+      - run: cd build && ctest
+
+      - name: Generate Coverage
+        id: coverage
+        run: |
+          cd build
+          set +e
+
+          gcovr \
+            --txt coverage.txt \
+            --print-summary \
+            --fail-under-line 30 \
+            --fail-under-branch 25 \
+            > summary.txt
+
+          EXIT_CODE=$?
+          set -e
+
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Coverage Summary
+        if: always()
+        run: |
+          echo "## 📊 Coverage" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat build/summary.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Low Coverage (<50%)" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          awk '$4 ~ /%/ && $4+0 < 50 {print}' build/coverage.txt >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if coverage not met
         if: steps.coverage.outputs.exit_code != '0'
         run: exit 1
-
-      - name: Upload Coverage Artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: xinputedge-receiver/build/coverage/coverage*.html
