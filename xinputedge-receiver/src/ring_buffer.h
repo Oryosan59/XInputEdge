@@ -8,6 +8,12 @@
 extern "C" {
 #endif
 
+#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
+#include <stdatomic.h>
+#else
+#error "XInputEdge requires C11 with stdatomic.h support for lock-free ring buffer."
+#endif
+
 // 約 64ms 履歴（1kHz 時）
 #define XIE_RING_BUFFER_SIZE 64
 
@@ -15,9 +21,14 @@ extern "C" {
 #define XIE_DEJITTER_DELAY 5
 
 typedef struct {
-  XiePacket buffer[XIE_RING_BUFFER_SIZE];
-  uint16_t newest_sample_id;
-  int has_data;
+  XiePacket packet;
+  _Atomic uint32_t sequence;
+} XieRingSlot;
+
+typedef struct {
+  XieRingSlot slots[XIE_RING_BUFFER_SIZE];
+  _Atomic uint16_t newest_sample_id;
+  _Atomic int has_data;
 } XieRingBuffer;
 
 // バッファの初期化
