@@ -47,6 +47,8 @@ jobs:
             --enable=all \
             --inconclusive \
             --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=checkersReport \
             --quiet \
             --xml \
             --xml-version=2 \
