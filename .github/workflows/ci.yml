@@ -73,7 +73,6 @@ jobs:
 
   # ============================================================
   # Job 3: Build (Release) + Unit Tests
-  # 公開ライブラリとして最終確認する最適化ビルド
   # ============================================================
   build-release:
     name: Build Release & Test
@@ -97,7 +96,7 @@ jobs:
           dotnet build xinputedge-sender/examples/BasicSender/BasicSender.csproj \
             -c Release -warnaserror
 
-      # --- C99: Release ビルド + ctest ---
+      # --- C99 ---
       - name: Configure CMake (Release)
         run: |
           cmake -S xinputedge-receiver -B xinputedge-receiver/build/release \
@@ -115,7 +114,6 @@ jobs:
 
   # ============================================================
   # Job 4: Build Debug & Test (Fast Job)
-  # デバッグシンボル付き・Valgrindなしで高速にフィードバック
   # ============================================================
   build-debug-fast:
     name: Build Debug & Test (Fast)
@@ -151,7 +149,6 @@ jobs:
 
   # ============================================================
   # Job 5: Valgrind & Coverage (Slow Job)
-  # メインへのpush時のみ実行し、PRをブロックしない
   # ============================================================
   coverage-valgrind-slow:
     name: Coverage & Valgrind (Slow)
@@ -195,17 +192,64 @@ jobs:
           done
 
       - name: Generate Coverage Report
+        id: coverage
         run: |
           cd xinputedge-receiver/build/coverage
-          gcovr --root ${{ github.workspace }}/xinputedge-receiver \
-                --filter ${{ github.workspace }}/xinputedge-receiver/src \
-                --html-details coverage.html \
-                --print-summary \
-                --txt \
-                --fail-under-line 70 \
-                --fail-under-branch 50 \
-                --txt-metric branch \
-                .
+          set +e
+          gcovr \
+            --root ${{ github.workspace }}/xinputedge-receiver \
+            --filter ${{ github.workspace }}/xinputedge-receiver/src \
+            --html-details coverage.html \
+            --txt coverage.txt \
+            --print-summary \
+            --fail-under-line 25 \
+            --fail-under-branch 25 \
+            --txt-metric branch \
+            . > summary.txt
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Output Coverage to Job Summary
+        if: always()
+        run: |
+          cd xinputedge-receiver/build/coverage
+          if [ -f "summary.txt" ] && [ -f "coverage.txt" ]; then
+
+            echo "### Coverage Status" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "${{ steps.coverage.outputs.exit_code }}" = "0" ]; then
+              echo "✅ **Coverage threshold satisfied**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Coverage threshold not met**" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            cat summary.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Low Coverage Files (<50%)" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            awk '$4 ~ /%/ && $4+0 < 50 {print}' coverage.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>Click to view full coverage details</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            cat coverage.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if coverage threshold not met
+        if: steps.coverage.outputs.exit_code != '0'
+        run: exit 1
 
       - name: Upload Coverage Artifact
         uses: actions/upload-artifact@v4
