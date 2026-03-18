@@ -150,22 +150,46 @@ static void test_normal_receive(void) {
   XiePacket pkt = make_valid_packet(1);
   int sent = send_mock_packet(port, &pkt);
 
-  int recv_ret = (sent > 0) ? xie_server_recv(srv) : XIE_ERROR;
+  int recv_ret = XIE_TIMEOUT;
+  /* CIなどではUDPパケットがループバック経由でソケットバッファに入るまで数ms遅れることがあるため
+     タイムアウト(5ms)が返っても数回リトライする */
+  for (int i = 0; i < 10; i++) {
+    recv_ret = xie_server_recv(srv);
+    if (recv_ret == XIE_OK || recv_ret == XIE_DROP) {
+      break; /* 受信完了（または明確な破棄） */
+    }
+  }
 
-  /* 2 回目を送って state を確定させる（ring_buffer が 1 周するタイミングに依存しない） */
   if (recv_ret == XIE_OK) {
+    /* 2 回目を送って ring_buffer 内の state を確定させる */
     XiePacket pkt2 = make_valid_packet(2);
     send_mock_packet(port, &pkt2);
-    xie_server_recv(srv);
+    for (int i = 0; i < 10; i++) {
+      int r = xie_server_recv(srv);
+      if (r == XIE_OK || r == XIE_DROP) {
+        break;
+      }
+    }
   }
 
   const XieState *st = xie_server_state(srv);
 
-  /* 検証 */
-  int ok = (recv_ret == XIE_OK) && (st != NULL) &&
-           (st->lx == pkt.lx) && (st->ly == pkt.ly) &&
-           (st->lt == pkt.lt) && (st->rt == pkt.rt) &&
-           (st->buttons == pkt.buttons);
+  /* 検証とデバッグ出力 */
+  int ok = 1;
+  if (recv_ret != XIE_OK) {
+    printf("\n    -> recv_ret failed. Expected XIE_OK(%d), got %d\n", XIE_OK, recv_ret);
+    ok = 0;
+  }
+  if (!st) {
+    printf("\n    -> state is NULL\n");
+    ok = 0;
+  } else if (recv_ret == XIE_OK) {
+    if (st->lx != pkt.lx) { printf("\n    -> lx mismatch: exp %d, got %d\n", pkt.lx, st->lx); ok = 0; }
+    if (st->ly != pkt.ly) { printf("\n    -> ly mismatch: exp %d, got %d\n", pkt.ly, st->ly); ok = 0; }
+    if (st->lt != pkt.lt) { printf("\n    -> lt mismatch: exp %d, got %d\n", pkt.lt, st->lt); ok = 0; }
+    if (st->rt != pkt.rt) { printf("\n    -> rt mismatch: exp %d, got %d\n", pkt.rt, st->rt); ok = 0; }
+    if (st->buttons != pkt.buttons) { printf("\n    -> buttons mismatch: exp %d, got %d\n", pkt.buttons, st->buttons); ok = 0; }
+  }
 
   ASSERT(ok);
 
@@ -275,12 +299,16 @@ static void test_lost_count(void) {
   /* 1 枚目: sample_id = 1 */
   XiePacket first = make_valid_packet(1);
   send_mock_packet(port, &first);
-  xie_server_recv(srv);
+  for (int i = 0; i < 10; i++) {
+    if (xie_server_recv(srv) == XIE_OK) break;
+  }
 
   /* 2 枚目: sample_id = 11 → lost = 9 */
   XiePacket jumped = make_valid_packet(11);
   send_mock_packet(port, &jumped);
-  xie_server_recv(srv);
+  for (int i = 0; i < 10; i++) {
+    if (xie_server_recv(srv) == XIE_OK) break;
+  }
 
   uint32_t lost = xie_server_lost(srv);
   ASSERT(lost == 9);
