@@ -106,27 +106,48 @@ namespace XInputEdge
         private void SendLoop()
         {
             var sw = Stopwatch.StartNew();
-            long next = 0;
+            long next = sw.ElapsedTicks;
             long interval = Stopwatch.Frequency / 1000; // 1ms
 
             while (_running)
             {
-                while (sw.ElapsedTicks < next)
-                    Thread.SpinWait(10);
-                next += interval;
-
-                var result = XInputNative.XInputGetState((uint)_userIndex, out var state);
-
-                if (result == XInputNative.ERROR_DEVICE_NOT_CONNECTED)
+                if (!_wasConnected)
                 {
-                    if (_wasConnected) { _wasConnected = false; OnDisconnected?.Invoke(); }
-                    Thread.Sleep(500); // 接続待ちの状態ではタイトなスピンを避けてCPU負荷を下げる
-                    continue;
+                    // 未接続ステート: 緩やかなポーリングでCPU負荷を下げる
+                    var result = XInputNative.XInputGetState((uint)_userIndex, out var state);
+                    
+                    if (result != XInputNative.ERROR_SUCCESS)
+                    {
+                        Thread.Sleep(500);
+                        continue;
+                    }
+
+                    // 接続を検知 -> 1msスピンウェイトモードへ移行
+                    _wasConnected = true;
+                    OnConnected?.Invoke();
+                    
+                    next = sw.ElapsedTicks + interval;
+                    SendPacket(ref state.Gamepad);
                 }
+                else
+                {
+                    // 接続ステート: 厳密な1msスピンウェイト
+                    while (sw.ElapsedTicks < next)
+                        Thread.SpinWait(10);
+                    next += interval;
 
-                if (!_wasConnected) { _wasConnected = true; OnConnected?.Invoke(); }
+                    var result = XInputNative.XInputGetState((uint)_userIndex, out var state);
 
-                SendPacket(ref state.Gamepad);
+                    if (result != XInputNative.ERROR_SUCCESS)
+                    {
+                        // 切断を検知 -> 未接続ステートへ
+                        _wasConnected = false;
+                        OnDisconnected?.Invoke();
+                        continue;
+                    }
+
+                    SendPacket(ref state.Gamepad);
+                }
             }
         }
 
