@@ -47,3 +47,11 @@ add_executable(test_boundary_gtest test_boundary_gtest.cpp)
 target_link_libraries(test_boundary_gtest PRIVATE xinputedge gtest_main Threads::Threads)
 target_compile_options(test_boundary_gtest PRIVATE -Wall -Wextra -Werror -pedantic)
 add_valgrind_test(test_boundary_gtest)
+
+# ---------------------------------------------------------------
+# Test: io (UDP loopback)
+# ---------------------------------------------------------------
+add_executable(test_io test_io.c)
+target_link_libraries(test_io PRIVATE xinputedge Threads::Threads)
+target_compile_options(test_io PRIVATE -Wall -Wextra -Werror -pedantic)
+add_valgrind_test(test_io)
