@@ -35,7 +35,8 @@ static void test_xie_sleep_us(void) {
   uint32_t diff = end - start;
   // 厳密なタイマーではないので、OSのスケジューリングのブレを考慮し、
   // 10000us以上を期待するが余裕を持たせ 8000us 以上とする
-  ASSERT(diff >= 8000);
+  // 同時に、予期せぬ長時間の待機(50ms以上)が行われていないことも検証する
+  ASSERT(diff >= 8000 && diff < 50000);
 }
 
 int main(void) {

@@ -287,8 +287,8 @@ static void test_apply_safe_state(void) {
     printf("\n    -> state is NULL\n");
     ok = 0;
   } else {
-    if (st->lx != 0 || st->ly != 0 || st->rx != 0 || st->ry != 0 ||
-        st->lt != 0 || st->rt != 0 || st->buttons != 0) {
+    XieState safe_state = {0};
+    if (memcmp(st, &safe_state, sizeof(XieState)) != 0) {
       printf("\n    -> safe state not applied correctly\n");
       ok = 0;
     }
