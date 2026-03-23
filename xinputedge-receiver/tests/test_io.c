@@ -267,6 +267,131 @@ static void test_lost_count(void) {
   teardown_server(&f);
 }
 
+/*
+ * apply_safe_state テスト
+ *   接続失効時に apply_safe_state() が呼ばれ、状態が安全(0)に保たれること
+ */
+static void test_apply_safe_state(void) {
+  TEST("io: connection_lost時にapply_safe_stateが状態をクリアすること");
+
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
+    return;
+  }
+
+  // 初期状態は connection_lost = 1
+  const XieState *st = xie_server_state(f.srv);
+  int ok = 1;
+  if (!st) {
+    printf("\n    -> state is NULL\n");
+    ok = 0;
+  } else {
+    if (st->lx != 0 || st->ly != 0 || st->rx != 0 || st->ry != 0 ||
+        st->lt != 0 || st->rt != 0 || st->buttons != 0) {
+      printf("\n    -> safe state not applied correctly\n");
+      ok = 0;
+    }
+  }
+
+  ASSERT(ok);
+  teardown_server(&f);
+}
+
+/*
+ * resync テスト
+ *   sample_idギャップが1000以上のときにresync処理が走ること
+ */
+static void test_resync(void) {
+  TEST("io: 大きなsample_idギャップ時にresyncが働き受信が継続すること");
+
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
+    return;
+  }
+
+  // 1. 最初は sample_id = 1 を送る
+  XiePacket p1 = make_valid_packet(1);
+  send_mock_packet(f.port, &p1);
+  for (int i = 0; i < 10; i++) {
+    if (xie_server_recv(f.srv) == XIE_OK) break;
+  }
+
+  // 2. sample_id が 1002 のパケットを送る
+  // delta = 1002 - (1 + 1) = 1000 で resync(s, packet) が呼ばれる
+  XiePacket p2 = make_valid_packet(1002);
+  send_mock_packet(f.port, &p2);
+  
+  int ok = 0;
+  for (int i = 0; i < 10; i++) {
+    if (xie_server_recv(f.srv) == XIE_OK) {
+      ok = 1;
+      break;
+    }
+  }
+
+  ASSERT(ok);
+  teardown_server(&f);
+}
+
+/*
+ * xie_server_latest_packet テスト
+ *   記録された直近の生パケットを取得できること
+ */
+static void test_latest_packet(void) {
+  TEST("io: xie_server_latest_packet で直近のパケットが取得できること");
+
+  TestFixture f = setup_server();
+  if (!f.srv) {
+    printf("SKIP (server setup failed)\n");
+    return;
+  }
+
+  // 特徴的な値を設定して送信
+  XiePacket pkt = make_valid_packet(1);
+  pkt.lx = 1234;
+  send_mock_packet(f.port, &pkt);
+
+  int recv_ret = XIE_TIMEOUT;
+  for (int i = 0; i < 10; i++) {
+    recv_ret = xie_server_recv(f.srv);
+    if (recv_ret == XIE_OK || recv_ret == XIE_DROP) {
+      break; 
+    }
+  }
+
+  // DEJITTER分 送る
+  if (recv_ret == XIE_OK) {
+    for (uint16_t id = 2; id <= 6; id++) {
+      XiePacket p = make_valid_packet(id);
+      send_mock_packet(f.port, &p);
+      for (int i = 0; i < 10; i++) {
+        int r = xie_server_recv(f.srv);
+        if (r == XIE_OK || r == XIE_DROP) break;
+      }
+    }
+  }
+
+  // 内部状態へ反映させるため xie_server_state を呼ぶ
+  xie_server_state(f.srv);
+
+  // xie_server_latest_packet の戻り値を確認
+  const XiePacket *latest = (const XiePacket *)xie_server_latest_packet(f.srv);
+
+  int ok = 1;
+  if (!latest) {
+    printf("\n    -> latest_packet is NULL\n");
+    ok = 0;
+  } else if (latest->lx != 1234) {
+    printf("\n    -> latest_packet mismatch: exp %d, got %d\n", 1234, latest->lx);
+    ok = 0;
+  }
+
+  ASSERT(ok);
+  teardown_server(&f);
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
@@ -277,6 +402,9 @@ int main(void) {
   test_timeout();
   test_invalid_packet_dropped();
   test_lost_count();
+  test_apply_safe_state();
+  test_resync();
+  test_latest_packet();
 
   printf("\n%d / %d tests passed\n", g_tests - g_failed, g_tests);
   return g_failed == 0 ? 0 : 1;

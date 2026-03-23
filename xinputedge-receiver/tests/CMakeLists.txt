@@ -55,3 +55,11 @@ add_executable(test_io test_io.c)
 target_link_libraries(test_io PRIVATE xinputedge Threads::Threads)
 target_compile_options(test_io PRIVATE -Wall -Wextra -Werror -pedantic)
 add_valgrind_test(test_io)
+
+# ---------------------------------------------------------------
+# Test: time_util
+# ---------------------------------------------------------------
+add_executable(test_time_util test_time_util.c)
+target_link_libraries(test_time_util PRIVATE xinputedge Threads::Threads)
+target_compile_options(test_time_util PRIVATE -Wall -Wextra -Werror -pedantic)
+add_valgrind_test(test_time_util)
