@@ -57,7 +57,7 @@ Windows PC に接続された XInput 対応ゲームパッドの入力を、**UD
 | 特徴 | 詳細 |
 |---|---|
 | **入力取得** | XInput API によるゲームパッド読み取り |
-| **送信周期** | `Stopwatch` + `SpinWait` スピンクロック → **1 ms (1000 Hz)** |
+| **送信周期** | `Stopwatch` + ハイブリッド待機 (`Sleep(0)` + `SpinWait`) → **1 ms (1000 Hz)**<br>※切断時は自動エコモード (`Sleep(500)`) でCPU負荷低減 |
 | **メモリ** | 完全ゼロアロケーション設計。GC スパイク排除 |
 | **出力** | 22 バイト固定長 XIE Packet を UDP で送出 |
 
@@ -275,10 +275,14 @@ target_link_libraries(your_target PRIVATE xinputedge)
 
 | ジョブ | 内容 |
 |---|---|
-| `format` | `clang-format` (C) + `dotnet format` (C#) |
-| `static-analysis` | `cppcheck` による静的解析 |
+| `format` | `clang-format` (C) + `dotnet format` (C#) によるコード整形チェック |
+| `static-analysis` | `cppcheck` による静的解析（サマリーをダッシュボードへ出力） |
 | `build-release` | Release ビルド + `ctest` ユニットテスト |
 | `build-debug` | Debug ビルド + `ctest` ユニットテスト |
+| `valgrind` | `valgrind --leak-check=full` によるメモリリーク・エラー検査 |
+| `coverage` | `gcovr` を用いたコードカバレッジ計測（詳細レポートをArtifactsとして保存） |
+
+> 各テストや解析が完了すると、**GitHub Actions の Step Summary** 上に視覚的で分かりやすいダッシュボード（テストのパス状況、リーク関数ランキング、低カバレッジファイルのリスト等）が自動生成されます。
 
 ---
 
